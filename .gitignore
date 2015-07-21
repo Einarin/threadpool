@@ -26,3 +26,10 @@
 *.exe
 *.out
 *.app
+
+# Visual Studio
+*.tlog
+*.idb
+*.sdf
+*.opensdf
+*.vcxproj.filters
