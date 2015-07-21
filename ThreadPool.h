@@ -30,7 +30,7 @@ SOFTWARE.
 #include "Semaphore.h"
 
 //use Standard library thread when available
-//#define USE_STD_THREAD
+#define USE_STD_THREAD
 
 //Visual Studio before 2012 doesn't have std::thread
 #ifdef _MSC_VER
@@ -85,7 +85,7 @@ protected:
 	    Semaphore s;
 	    bool complete;
 	    T result;
-	    Data():complete(false){
+	    Data():complete(false),s(0){
 	    }
 	};
 	std::shared_ptr<Data> data;
@@ -121,7 +121,7 @@ class Future<Future<T>>{
 		Semaphore s;
 		bool m_set;
 		Future<T> child;
-		Data():m_set(false){
+		Data():m_set(false),s(0){
 		}
 	};
 	std::shared_ptr<Data> data;
@@ -153,7 +153,7 @@ class Future<void>{
 	struct Data{
 	Semaphore s;
 	bool complete;
-	Data():complete(false){
+	Data():complete(false),s(0){
 	}
 	};
 	std::shared_ptr<Data> data;
@@ -209,6 +209,8 @@ struct DispatchData{
 	MUTEX dispatchMutex;
 	Semaphore dispatchSemaphore;
 	bool stop;
+	DispatchData():dispatchSemaphore(0)
+	{}
 };
 
 template<typename T>
@@ -221,17 +223,17 @@ DWORD WINAPI awaitWorkerThreadProc(LPVOID lpParameter){
 #error "Need thread invocation signature"
 #endif
 #endif
-	std::pair<DispatchData*,Future<T>>* stuff = (std::pair<DispatchData*,Future<T>>*)lpParameter;
-	DispatchData* data = stuff->first;
+	std::pair<std::shared_ptr<DispatchData>,Future<T>>* stuff = (std::pair<std::shared_ptr<DispatchData>,Future<T>>*)lpParameter;
+	//DispatchData* data = stuff->first;
 	while(true/*!stuff->second.complete()*/){
-		ACQUIRE_MUTEX(data->dispatchMutex);
-		if(!data->dispatchQueue.empty()){
-			std::function<void()> workUnit = data->dispatchQueue.front();
-			data->dispatchQueue.pop();
-			RELEASE_MUTEX(data->dispatchMutex);
+		ACQUIRE_MUTEX(stuff->first->dispatchMutex);
+		if(!stuff->first->dispatchQueue.empty()){
+			std::function<void()> workUnit = stuff->first->dispatchQueue.front();
+			stuff->first->dispatchQueue.pop();
+			RELEASE_MUTEX(stuff->first->dispatchMutex);
 			workUnit();
 		} else {
-			RELEASE_MUTEX(data->dispatchMutex);
+			RELEASE_MUTEX(stuff->first->dispatchMutex);
 			break; //no work to do, let this thread die
 		}	
 	}
@@ -273,8 +275,10 @@ public:
 	T await(Future<T> result){
 		static thread_local int depth;
 		depth++; //track recursion depth
-		//put upper bound on recursion depth to prevent stack overflow
-		if(depth < 100){ 
+		//TODO: put upper bound on recursion depth to prevent stack overflow (doesn't work yet)
+		if(depth >=100){ 
+			std::cout << "Warning: worker thread stack has become excessive" << std::endl;
+		}
 			while(!result.isDone() && !sharedState->stop){
 				//do some other work while we wait	
 				if(TRY_MUTEX(sharedState->dispatchMutex)){
@@ -288,12 +292,12 @@ public:
 					}
 				}
 			}
-		} else {
+		/*} else {
 			std::cout << "Warning: worker thread stack has become excessive" << std::endl;
 			//spawn a new worker thread so we don't blow out our stack
 			//auto data = make_pair(&sharedState,result);
-			std::pair<DispatchData*,Future<T>>* data = new std::pair<DispatchData*,Future<T>>;
-			data->first = &*sharedState;
+			std::pair<std::shared_ptr<DispatchData>,Future<T>>* data = new std::pair<std::shared_ptr<DispatchData>,Future<T>>;
+			data->first = sharedState;
 			data->second = result;
 			#ifdef WIN32_CONCURRENCY
 				thread worker = CreateThread(NULL,0,awaitWorkerThreadProc<T>,(LPVOID)data,0,NULL);
@@ -303,7 +307,7 @@ public:
 			#endif
 			//block on the return value rather than the other thread
 			//WaitForSingleObject(thread,INFINITE);
-		}
+		}*/
 		depth--;
 		//because result.done() is true it should be done now
 		return result.wait();
@@ -356,9 +360,11 @@ int fib(ThreadPool& pool, int x){
 bool testThreadpool(std::ostream& out){
 	WorkQueue mainQueue;
 	ThreadPool pool1(1);
-	ThreadPool pool2(2);
+	ThreadPool pool2(32);
 
-	out << "Testing thread pool" << std::endl;
+	out << "Testing thread pool creation and deletion" << std::endl;
+	ThreadPool* pool3 = new ThreadPool();
+	delete pool3;
 	MUTEX blockStart;
 	NEW_MUTEX(blockStart);
 	ACQUIRE_MUTEX(blockStart);
@@ -398,8 +404,8 @@ bool testThreadpool(std::ostream& out){
 	int correctVals[] = { 1,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584,4181,6765};
 	for (int i = 0; i < fibDepth; i++) {
 		//out << "status: " << (success ? "true" : "false") << std::endl;
-		//out << i << " = " << pool2.await(output[i]) << std::endl;
-		success &= (output[i] == correctVals[i]);
+		out << i << " = " << /*pool2.await(output[i])*/output[i] << std::endl;
+		success &= (output[i].wait() == correctVals[i]);
 	}
 
 	out << "test WorkQueue and nested Futures" << std::endl;

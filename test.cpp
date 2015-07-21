@@ -24,6 +24,6 @@ SOFTWARE.
 #include "ThreadPool.h"
 
 int main(int argc, char* argv[]) {
-	boolean result = testThreadpool(std::cout);
+	bool result = testThreadpool(std::cout);
 	return result ? 0 : -1;
 }

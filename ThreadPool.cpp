@@ -68,7 +68,8 @@ void WorkerThreadProc(void* lpParameter){
 #else
 DWORD WINAPI WorkerThreadProc(LPVOID lpParameter){
 #endif
-	std::shared_ptr<DispatchData> data = *(std::shared_ptr<DispatchData>*)lpParameter;
+	std::shared_ptr<DispatchData>* ptr = (std::shared_ptr<DispatchData>*)lpParameter;
+	std::shared_ptr<DispatchData> data = *ptr;
 	bool run = true;
 	while(run){
 		ACQUIRE_MUTEX(data->dispatchMutex);
@@ -133,7 +134,7 @@ ThreadPool::ThreadPool():sharedState(new DispatchData){
 			SetThreadName(current.threadId,tmp.c_str());
 			#endif
 		#else
-			current.mthread = thread(WorkerThreadProc,(void*)&sharedState);
+			current.mthread = thread(WorkerThreadProc,(void*)new std::shared_ptr<DispatchData>(sharedState));
 			current.threadId = current.mthread.get_id();
 			current.mthread.detach();
 			#ifdef _DEBUG
@@ -169,7 +170,7 @@ ThreadPool::ThreadPool(int numberOfThreads):sharedState(new DispatchData){
 				SetThreadName(current.threadId,tmp.c_str());
 			#endif
 		#else
-			current.mthread = thread(WorkerThreadProc,(void*)&sharedState);
+			current.mthread = thread(WorkerThreadProc,(void*)new std::shared_ptr<DispatchData>(sharedState));
 			current.threadId = current.mthread.get_id();
 			current.mthread.detach();
 			#ifdef _DEBUG

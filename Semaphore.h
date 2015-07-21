@@ -35,7 +35,7 @@ protected:
     semaphore_t s;
     int id;
 public:
-    Semaphore(int initialCount=1){
+    Semaphore(int initialCount){
     static int num;
         #ifdef _WIN32
             s = CreateSemaphore(NULL,0,initialCount,NULL);
@@ -56,7 +56,26 @@ public:
         #ifdef _WIN32
             return 0==WaitForSingleObject(s,INFINITE);
         #else
-            return 0==sem_wait(&s);
+            //return 0==sem_wait(&s);
+	    int result = sem_wait(&s);
+	    if(result != 0){
+	    	std::cout << "sem_wait failed: ";
+		switch(errno){
+		case EINTR:
+			std::cout << "interrupted";
+			break;
+			case EINVAL:
+			std::cout << "not a valid semaphore";
+			break;
+			case EAGAIN:
+			std::cout << "would block";
+			break;
+			default:
+			std::cout << errno;
+		}
+		return false;
+	    }
+	    return true;
         #endif
     }
     inline void post(){
